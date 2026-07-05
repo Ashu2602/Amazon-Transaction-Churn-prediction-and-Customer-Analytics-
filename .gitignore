@@ -1,0 +1,18 @@
+__pycache__/
+*.pyc
+
+# raw dataset -- not ours to redistribute, keep out of the repo
+../Amazon/
+
+# generated artifacts -- regenerate via build_product_index.py.
+# NOTE: churn_dataset.csv, churn_model.joblib, and dashboard_data/*.csv are
+# deliberately NOT ignored -- they're small (<5MB total) and the deployed
+# Streamlit app needs them committed since it has no access to the raw
+# Amazon/ folder. product_embeddings.npy (321MB) exceeds GitHub's 100MB
+# file limit outright and isn't needed by the dashboard app anyway.
+product_embeddings.npy
+product_metadata.parquet
+build_index.log
+
+.env
+.streamlit/secrets.toml

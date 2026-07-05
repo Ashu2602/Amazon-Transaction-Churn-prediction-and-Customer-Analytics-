@@ -1,0 +1,13 @@
+pandas
+numpy
+scikit-learn
+joblib
+sentence-transformers
+claude-agent-sdk
+anthropic
+fastapi
+uvicorn
+pyarrow
+streamlit
+plotly
+python-dotenv
