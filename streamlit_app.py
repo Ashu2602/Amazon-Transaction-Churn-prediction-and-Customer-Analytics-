@@ -13,24 +13,31 @@ import joblib
 import pandas as pd
 import plotly.express as px
 import streamlit as st
+from dotenv import load_dotenv
 
 from dashboard_data import load_tables
 from dashboard_qa import answer_question
 
 st.set_page_config(page_title="Amazon Purchases Analytics", layout="wide")
 
-# Resolve ANTHROPIC_API_KEY from Streamlit secrets (hosted) or the environment
-# (local .env via python-dotenv) -- st.secrets raises if no secrets.toml exists
-# at all, so probe safely rather than assuming one is present.
-try:
-    _secret_key = st.secrets.get("ANTHROPIC_API_KEY")
-except Exception:
-    _secret_key = None
-if _secret_key:
-    os.environ["ANTHROPIC_API_KEY"] = _secret_key
-else:
-    from dotenv import load_dotenv
-    load_dotenv()
+load_dotenv()  # local dev: reads .env if present; no-op on Streamlit Cloud (no .env is deployed there)
+
+# Qualitative palette used across every chart -- one place to change the look
+COLORS = px.colors.qualitative.Bold
+HEAT = "Viridis"
+
+
+def get_api_key() -> str | None:
+    """Resolve ANTHROPIC_API_KEY from Streamlit secrets (hosted) first, then
+    the environment (local .env). Split out from a bare `st.secrets[...]`
+    lookup so a genuinely-missing secret produces a clear on-page message
+    instead of the SDK's generic "could not resolve authentication" error."""
+    try:
+        if "ANTHROPIC_API_KEY" in st.secrets:
+            return st.secrets["ANTHROPIC_API_KEY"]
+    except Exception:
+        pass  # no secrets.toml at all (e.g. local run with only a .env) -- fall through
+    return os.environ.get("ANTHROPIC_API_KEY")
 
 
 @st.cache_data
@@ -65,11 +72,15 @@ if page == "Overview":
     col1, col2 = st.columns(2)
     with col1:
         top_cat = category_df.head(10)
-        fig = px.bar(top_cat, x="total_spend", y="Category", orientation="h", title="Top 10 categories by total spend")
-        fig.update_layout(yaxis={"categoryorder": "total ascending"})
+        fig = px.bar(
+            top_cat, x="total_spend", y="Category", orientation="h", title="Top 10 categories by total spend",
+            color="Category", color_discrete_sequence=COLORS,
+        )
+        fig.update_layout(yaxis={"categoryorder": "total ascending"}, showlegend=False)
         st.plotly_chart(fig, use_container_width=True)
     with col2:
-        fig = px.line(monthly_df, x="year_month", y="n_orders", title="Monthly order volume")
+        fig = px.line(monthly_df, x="year_month", y="n_orders", title="Monthly order volume", markers=True)
+        fig.update_traces(line_color=COLORS[0])
         st.plotly_chart(fig, use_container_width=True)
 
 # ------------------------------------------------------------ Churn Analysis
@@ -83,7 +94,10 @@ elif page == "Churn Analysis":
     )
     seg = churn_df.groupby(demo_col)["churn"].mean().sort_values(ascending=False).reset_index()
     seg["churn"] = seg["churn"] * 100
-    fig = px.bar(seg, x=demo_col, y="churn", title=f"Churn rate (%) by {demo_col}")
+    fig = px.bar(
+        seg, x=demo_col, y="churn", title=f"Churn rate (%) by {demo_col}",
+        color="churn", color_continuous_scale="Reds",
+    )
     st.plotly_chart(fig, use_container_width=True)
 
     col1, col2 = st.columns(2)
@@ -98,12 +112,15 @@ elif page == "Churn Analysis":
             .reset_index()
         )
         top_feat.columns = ["feature", "importance"]
-        fig = px.bar(top_feat, x="importance", y="feature", orientation="h", title="Top churn model features")
+        fig = px.bar(
+            top_feat, x="importance", y="feature", orientation="h", title="Top churn model features",
+            color="importance", color_continuous_scale=HEAT,
+        )
         fig.update_layout(yaxis={"categoryorder": "total ascending"})
         st.plotly_chart(fig, use_container_width=True)
     with col2:
         proba = model.predict_proba(churn_df.drop(columns=["churn", "orders_in_label_window"]))[:, 1]
-        fig = px.histogram(x=proba, nbins=40, title="Predicted churn probability distribution")
+        fig = px.histogram(x=proba, nbins=40, title="Predicted churn probability distribution", color_discrete_sequence=[COLORS[3]])
         fig.update_layout(xaxis_title="predicted churn probability", yaxis_title="customers")
         st.plotly_chart(fig, use_container_width=True)
 
@@ -113,15 +130,19 @@ elif page == "Customer & Transactions":
     with col1:
         fig = px.choropleth(
             state_df, locations="Shipping Address State", locationmode="USA-states", scope="usa",
-            color="total_spend", title="Total spend by state",
+            color="total_spend", title="Total spend by state", color_continuous_scale="Plasma",
         )
         st.plotly_chart(fig, use_container_width=True)
     with col2:
-        fig = px.bar(state_df.head(10), x="total_spend", y="Shipping Address State", orientation="h", title="Top 10 states by spend")
-        fig.update_layout(yaxis={"categoryorder": "total ascending"})
+        fig = px.bar(
+            state_df.head(10), x="total_spend", y="Shipping Address State", orientation="h", title="Top 10 states by spend",
+            color="Shipping Address State", color_discrete_sequence=COLORS,
+        )
+        fig.update_layout(yaxis={"categoryorder": "total ascending"}, showlegend=False)
         st.plotly_chart(fig, use_container_width=True)
 
-    fig = px.line(monthly_df, x="year_month", y="total_spend", title="Monthly total spend")
+    fig = px.line(monthly_df, x="year_month", y="total_spend", title="Monthly total spend", markers=True)
+    fig.update_traces(line_color=COLORS[2])
     st.plotly_chart(fig, use_container_width=True)
 
 # --------------------------------------------------------------- Ask a Question
@@ -129,11 +150,19 @@ else:
     st.subheader("Ask a question about churn or customer behavior")
     st.caption("Examples: \"Which income bracket churns the most?\" / \"What are the top 5 categories by spend?\" / \"How many customers have churned?\"")
 
+    api_key = get_api_key()
+    if not api_key:
+        st.error(
+            "ANTHROPIC_API_KEY is not configured for this app. "
+            "Go to the app's ⋮ menu → Settings → Secrets, add `ANTHROPIC_API_KEY = \"sk-ant-...\"`, "
+            "save, then Reboot the app."
+        )
+
     question = st.text_input("Your question")
-    if st.button("Ask") and question:
+    if st.button("Ask", disabled=not api_key) and question:
         with st.spinner("Thinking..."):
             try:
-                spec = answer_question(question, tables)
+                spec = answer_question(question, tables, api_key=api_key)
             except Exception as e:
                 st.error(f"Couldn't answer that: {e}")
                 spec = None
@@ -146,10 +175,13 @@ else:
                 st.dataframe(pd.DataFrame({spec["x_label"] or "category": spec["categories"], spec["y_label"] or "value": spec["values"]}))
             elif spec["categories"] and spec["values"]:
                 chart_df = pd.DataFrame({spec["x_label"] or "x": spec["categories"], spec["y_label"] or "y": spec["values"]})
+                x_col, y_col = spec["x_label"] or "x", spec["y_label"] or "y"
                 if spec["chart_type"] == "pie":
-                    fig = px.pie(chart_df, names=spec["x_label"] or "x", values=spec["y_label"] or "y", title=spec["title"])
+                    fig = px.pie(chart_df, names=x_col, values=y_col, title=spec["title"], color_discrete_sequence=COLORS)
                 elif spec["chart_type"] == "line":
-                    fig = px.line(chart_df, x=spec["x_label"] or "x", y=spec["y_label"] or "y", title=spec["title"])
+                    fig = px.line(chart_df, x=x_col, y=y_col, title=spec["title"], markers=True)
+                    fig.update_traces(line_color=COLORS[0])
                 else:
-                    fig = px.bar(chart_df, x=spec["x_label"] or "x", y=spec["y_label"] or "y", title=spec["title"])
+                    fig = px.bar(chart_df, x=x_col, y=y_col, title=spec["title"], color=x_col, color_discrete_sequence=COLORS)
+                    fig.update_layout(showlegend=False)
                 st.plotly_chart(fig, use_container_width=True)

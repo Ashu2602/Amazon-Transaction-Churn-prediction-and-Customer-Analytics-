@@ -106,8 +106,11 @@ def _run_query(tables: dict[str, pd.DataFrame], **kwargs) -> str:
         return json.dumps({"error": str(e)})
 
 
-def answer_question(question: str, tables: dict[str, pd.DataFrame]) -> dict:
-    client = anthropic.Anthropic()
+def answer_question(question: str, tables: dict[str, pd.DataFrame], api_key: str | None = None) -> dict:
+    # explicit api_key takes precedence (Streamlit secrets); falling back to
+    # anthropic.Anthropic()'s own env-var resolution keeps this function
+    # usable standalone (local .env, plain scripts) without a caller passing one
+    client = anthropic.Anthropic(api_key=api_key) if api_key else anthropic.Anthropic()
     messages = [{"role": "user", "content": question}]
 
     for _ in range(5):  # hard cap on tool round-trips
