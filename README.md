@@ -1,16 +1,34 @@
-# Amazon Purchases — Churn Prediction, RAG Recommendation Agent & Analytics Dashboard
+# Agentic RAG & AI-Powered Analytics for Amazon Purchase Data
 
-A data science / applied-ML portfolio project built on the **Amazon Purchases** research
+An **agentic AI / RAG portfolio project** built on the Amazon Purchases research
 dataset: 1,850,717 line-item transactions from 5,027 survey respondents (2018–2024),
-linked 1:1 to a demographic and behavioral survey. The project has four parts that build
-on each other:
+linked 1:1 to a demographic and behavioral survey. Two independent agentic systems sit
+on top of a supervised churn model and a lightweight retrieval index — no hand-coded
+if/else chatbots, no hallucinated numbers.
 
-1. **Churn prediction** — supervised binary classification (scikit-learn)
+## Agentic systems at a glance
+
+| System | Framework | Pattern | Grounded via |
+|---|---|---|---|
+| **Product recommendation agent** (`agent.py`) | Claude Agent SDK (MCP tool server) | Multi-turn tool-calling agent that decides which of 5 tools to call, in what order, from a free-text request | Local semantic vector index (sentence-transformers, 219K products) + per-user purchase history — the agent can *only* answer from retrieved data, never invents ASINs/prices |
+| **Analytics Q&A agent** (`dashboard_qa.py`) | Anthropic API, tool use + structured outputs | Stateless one-shot agent: calls a parameterized `query_table` tool as many times as needed, then must emit a response conforming to a JSON schema | Live pandas aggregation over the churn dataset — every number in an answer traces back to an actual tool call, not model memory |
+
+Both are **RAG in the general sense** (retrieval-augmented generation: the model's
+answer is conditioned on data fetched at request time, not parametric knowledge) even
+though only the first uses vector embeddings — the second retrieves via structured
+query rather than similarity search, which is the right retrieval mechanism when the
+underlying data is already tabular instead of unstructured text.
+
+The project has four parts that build on each other:
+
+1. **Churn prediction** — supervised binary classification (scikit-learn), the labeled
+   ground truth that both the API and the analytics agent serve
 2. **RAG + recommendation agent** — semantic search and personalized recommendations,
-   orchestrated by the Claude Agent SDK
+   orchestrated by the Claude Agent SDK (agentic system #1 above)
 3. **FastAPI backend** — REST layer wrapping (1) and (2) for a frontend to consume
-4. **Streamlit analytics dashboard** — charts + a Claude-powered natural-language
-   Q&A tool over the churn/customer data, deployed as a public web app
+4. **Streamlit analytics dashboard** — charts + the Claude-powered natural-language
+   Q&A agent over the churn/customer data (agentic system #2 above), deployed as a
+   public web app
 
 ---
 
@@ -146,7 +164,7 @@ generalizes; the deployed model uses every available labeled example.
 
 ---
 
-## Part 2 — RAG + Recommendation Agent
+## Part 2 — RAG + Recommendation Agent (Agentic System #1)
 
 **Files:** `build_product_index.py` → `recommend_tools.py` → `agent.py`
 
@@ -214,7 +232,7 @@ near production.
 
 ---
 
-## Part 4 — Analytics Dashboard (Streamlit)
+## Part 4 — Analytics Dashboard (Streamlit) (Agentic System #2)
 
 **Files:** `build_dashboard_aggregates.py` → `dashboard_data.py` → `dashboard_qa.py` → `streamlit_app.py`
 
